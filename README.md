@@ -1,93 +1,47 @@
-/**
- * Vite plugin that adds data-source-loc="file:line:col" attributes to every
- * JSX element at compile time. This enables the element picker to map rendered
- * DOM nodes back to their source file and line number.
- *
- * Active in both dev and build so the element picker works on deployed previews.
- *
- * Uses @babel/parser, @babel/traverse, and @babel/generator which are already
- * transitive dependencies of @vitejs/plugin-react (no extra install needed).
- */
+# Sankalp Interior Solution HRMS
 
-import { parse } from '@babel/parser';
-import _traverse from '@babel/traverse';
-import _generate from '@babel/generator';
-import * as t from '@babel/types';
+Enterprise HRMS + Field Operations platform for Sankalp Group & Business Solution.
 
-// Handle CJS default export interop
-const traverse = _traverse.default || _traverse;
-const generate = _generate.default || _generate;
+## Features
 
-export function sourceTags() {
-  let projectRoot = '';
+- **Attendance Management**: Punch IN/OUT with front-camera selfie and GPS verification.
+- **Financial Ledger (Khata)**: Track employee advances and deductions digitally.
+- **Payroll System**: Automated monthly salary calculation based on attendance and ledger adjustments.
+- **PDF Salary Slips**: Generate professional salary slips with one click.
+- **Project Site Management**: Track multiple project sites and employee assignments.
+- **Employee Directory**: Manage staff and laborers with role-based details.
+- **Authentication**: Secure login with Email/Password and Google OAuth.
 
-  return {
-    name: 'vite-source-tags',
-    enforce: 'pre',
+## Tech Stack
 
-    configResolved(config) {
-      projectRoot = config.root;
-    },
+- **Frontend**: React 19, TypeScript, Vite, Tailwind CSS, Framer Motion, Lucide React.
+- **Backend**: Vercel Serverless Functions (Node.js).
+- **Database**: Supabase (PostgreSQL) with PostGIS for geo-queries.
+- **Auth**: Supabase Auth.
 
-    transform(code, id) {
-      if (!/\.[jt]sx$/.test(id)) return null;
-      if (id.includes('node_modules')) return null;
+## Setup Instructions
 
-      let ast;
-      try {
-        ast = parse(code, {
-          sourceType: 'module',
-          plugins: ['jsx', 'typescript'],
-        });
-      } catch {
-        return null;
-      }
+1. **Clone the repository**
+2. **Install dependencies**:
+   ```bash
+   npm install
+   ```
+3. **Environment Variables**:
+   Create a `.env` file with the following:
+   - `VITE_SUPABASE_URL`
+   - `VITE_SUPABASE_ANON_KEY`
+   - `NEXT_PUBLIC_SUPABASE_URL`
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+4. **Database Setup**:
+   Run the provided SQL script in your Supabase SQL Editor to create tables and seed data.
+5. **Run Development Server**:
+   ```bash
+   npm run dev
+   ```
 
-      let modified = false;
+## Deployment
 
-      traverse(ast, {
-        JSXOpeningElement(path) {
-          const node = path.node;
+The project is configured for deployment on **Vercel**. Simply connect your GitHub repository to Vercel and it will handle the rest.
 
-          // Skip fragments (<> / <React.Fragment>)
-          if (t.isJSXIdentifier(node.name) && node.name.name === 'Fragment') return;
-          if (t.isJSXMemberExpression(node.name) &&
-              t.isJSXIdentifier(node.name.property) &&
-              node.name.property.name === 'Fragment') return;
-          if (!node.name.name && t.isJSXNamespacedName(node.name)) return;
-
-          const loc = node.loc;
-          if (!loc) return;
-
-          // Skip if already tagged (avoid double-transform on HMR)
-          const alreadyTagged = node.attributes.some(
-            attr => t.isJSXAttribute(attr) &&
-                    t.isJSXIdentifier(attr.name) &&
-                    attr.name.name === 'data-source-loc'
-          );
-          if (alreadyTagged) return;
-
-          const relPath = id.startsWith(projectRoot)
-            ? id.slice(projectRoot.length + 1)
-            : id;
-
-          const value = `${relPath}:${loc.start.line}:${loc.start.column}`;
-
-          node.attributes.push(
-            t.jsxAttribute(
-              t.jsxIdentifier('data-source-loc'),
-              t.stringLiteral(value)
-            )
-          );
-
-          modified = true;
-        },
-      });
-
-      if (!modified) return null;
-
-      const output = generate(ast, { retainLines: true }, code);
-      return { code: output.code, map: output.map };
-    },
-  };
-}
+---
+"ঘর নয়, স্বপ্ন সাজাই আমরা"
