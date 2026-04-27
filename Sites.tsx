@@ -1,205 +1,229 @@
-import React, { useState, useRef, useEffect } from 'react';
-import Webcam from 'react-webcam';
-import { Camera, MapPin, CheckCircle, AlertTriangle, RefreshCw, Loader2 } from 'lucide-react';
-import supabase from '../lib/supabase';
+import React, { useState, useEffect } from 'react';
+import { Plus, Search, ArrowUpRight, ArrowDownLeft } from 'lucide-react';
 
-const Attendance = () => {
-  const [step, setStep] = useState<'select' | 'capture' | 'success'>('select');
-  const [sites, setSites] = useState([]);
-  const [employees, setEmployees] = useState([]);
-  const [selectedSite, setSelectedSite] = useState('');
-  const [selectedEmployee, setSelectedEmployee] = useState('');
-  const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
-  const [selfie, setSelfie] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const webcamRef = useRef<Webcam>(null);
+const Ledger = () => {
+  const [entries, setEntries] = useState<any[]>([]);
+  const [employees, setEmployees] = useState<any[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [showAdd, setShowAdd] = useState(false);
+  const [newEntry, setNewEntry] = useState({
+    employee_id: '',
+    type: 'advance',
+    amount: '',
+    description: '',
+    date: new Date().toISOString().split('T')[0]
+  });
+
+  const fetchEntries = async () => {
+    try {
+      const res = await fetch('/api/ledger');
+      const data = await res.json();
+      setEntries(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [sRes, eRes] = await Promise.all([
-          fetch('/api/sites'),
-          fetch('/api/employees')
-        ]);
-        setSites(await sRes.json());
-        setEmployees(await eRes.json());
-
-        const { data: { session } } = await supabase.auth.getSession();
-        const user = session?.user;
-        if (user) {
-          const empRes = await fetch(`/api/employees`);
-          const allEmps = await empRes.json();
-          const currentEmp = allEmps.find((e: any) => e.auth_user_id === user.id);
-          if (currentEmp) setSelectedEmployee(currentEmp.id);
-        }
+        const empRes = await fetch('/api/employees');
+        const empData = await empRes.json();
+        setEmployees(Array.isArray(empData) ? empData : []);
+        await fetchEntries();
       } catch (err) {
-        setError("Failed to load initial data. Check your connection.");
+        console.error(err);
+      } finally {
+        setLoading(false);
       }
     };
     fetchData();
-
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-        (err) => setError("GPS is required for attendance. Please enable it.")
-      );
-    } else {
-      setError("Geolocation is not supported by this browser.");
-    }
   }, []);
 
-  const handleCapture = () => {
-    const imageSrc = webcamRef.current?.getScreenshot();
-    if (imageSrc) {
-      setSelfie(imageSrc);
-      setStep('capture');
-    }
-  };
-
-  const handleSubmit = async (action: 'IN' | 'OUT') => {
-    setError(null);
-    if (!selectedSite || !selectedEmployee || !location || !selfie) {
-      setError("Missing information. Please ensure GPS and Selfie are captured.");
-      return;
-    }
-
-    setLoading(true);
-    const attendanceData = {
-      employee_id: selectedEmployee,
-      site_id: selectedSite,
-      action,
-      geo_location: location,
-      selfie_url: selfie,
-    };
-
-    try {
-      const res = await fetch('/api/attendance', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(attendanceData),
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const res = await fetch('/api/ledger', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newEntry)
+    });
+    if (res.ok) {
+      setShowAdd(false);
+      fetchEntries();
+      setNewEntry({
+        employee_id: '',
+        type: 'advance',
+        amount: '',
+        description: '',
+        date: new Date().toISOString().split('T')[0]
       });
-
-      const result = await res.json();
-      if (!res.ok) throw new Error(result.error || "Failed to record attendance.");
-      
-      setStep('success');
-    } catch (err: any) {
-      setError(err.message || "Network error. Please ensure you are online.");
-    } finally {
-      setLoading(false);
     }
   };
 
-  if (step === 'success') {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] text-center p-6">
-        <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mb-6">
-          <CheckCircle size={48} className="text-green-600" />
-        </div>
-        <h2 className="text-2xl font-bold mb-2 text-slate-900">Attendance Marked!</h2>
-        <p className="text-slate-500 mb-8">Successfully recorded on the server.</p>
-        <button 
-          onClick={() => { setStep('select'); setSelfie(null); setError(null); }}
-          className="bg-blue-600 text-white px-8 py-3 rounded-xl font-semibold shadow-lg hover:bg-blue-700 transition-colors"
-        >
-          Mark Another
-        </button>
-      </div>
-    );
-  }
+  const filteredEntries = entries.filter((entry: any) => 
+    entry.employees?.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    entry.description?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const totalAdvance = entries.filter((e: any) => e.type === 'advance').reduce((a, b: any) => a + (Number(b.amount) || 0), 0);
+  const totalDeduction = entries.filter((e: any) => e.type === 'deduction').reduce((a, b: any) => a + (Number(b.amount) || 0), 0);
+
+  if (loading) return <div className="p-8 text-center text-slate-500">Loading ledger...</div>;
 
   return (
-    <div className="max-w-md mx-auto space-y-6">
-      <header>
-        <h1 className="text-2xl font-bold text-slate-900">Attendance</h1>
-        <p className="text-slate-500">Real-time presence capture</p>
+    <div className="space-y-6">
+      <header className="flex justify-between items-center">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Khata / Ledger</h1>
+          <p className="text-slate-500">Track advances and deductions</p>
+        </div>
+        <button 
+          onClick={() => setShowAdd(true)}
+          className="bg-blue-600 text-white p-3 rounded-xl flex items-center gap-2 font-medium"
+        >
+          <Plus size={20} />
+          <span className="hidden sm:inline">Add Entry</span>
+        </button>
       </header>
 
-      {error && (
-        <div className="bg-red-50 border border-red-100 p-4 rounded-xl flex items-start gap-3 text-red-600 text-sm animate-in fade-in slide-in-from-top-2">
-          <AlertTriangle size={20} className="shrink-0" />
-          <span>{error}</span>
+      <div className="grid grid-cols-2 gap-4">
+        <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
+          <p className="text-xs font-medium text-slate-500 uppercase mb-1">Total Advance</p>
+          <p className="text-xl font-bold text-orange-600">₹{totalAdvance.toLocaleString()}</p>
         </div>
-      )}
-
-      <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Select Site</label>
-          <select 
-            className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none"
-            value={selectedSite}
-            onChange={(e) => setSelectedSite(e.target.value)}
-          >
-            <option value="">Choose a site...</option>
-            {sites.map((site: any) => (
-              <option key={site.id} value={site.id}>{site.name}</option>
-            ))}
-          </select>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Employee</label>
-          <select 
-            className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none"
-            value={selectedEmployee}
-            onChange={(e) => setSelectedEmployee(e.target.value)}
-          >
-            <option value="">Choose employee...</option>
-            {employees.map((emp: any) => (
-              <option key={emp.id} value={emp.id}>{emp.full_name}</option>
-            ))}
-          </select>
-        </div>
-
-        <div className="flex items-center gap-2 text-sm text-slate-500">
-          <MapPin size={16} className={location ? 'text-green-500' : 'text-slate-300'} />
-          {location ? `GPS Fixed: ${location.lat.toFixed(4)}, ${location.lng.toFixed(4)}` : 'Waiting for GPS...'}
+        <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
+          <p className="text-xs font-medium text-slate-500 uppercase mb-1">Total Recovery</p>
+          <p className="text-xl font-bold text-green-600">₹{totalDeduction.toLocaleString()}</p>
         </div>
       </div>
 
-      {!selfie ? (
-        <div className="relative rounded-2xl overflow-hidden bg-slate-900 aspect-square shadow-xl group">
-          <Webcam
-            audio={false}
-            ref={webcamRef}
-            screenshotFormat="image/jpeg"
-            videoConstraints={{ facingMode: "user" }}
-            className="w-full h-full object-cover"
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+        <div className="p-4 border-b border-slate-100 flex items-center gap-3">
+          <Search size={18} className="text-slate-400" />
+          <input 
+            type="text" 
+            placeholder="Search employee or reason..." 
+            className="flex-1 outline-none text-sm" 
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
           />
-          <button 
-            onClick={handleCapture}
-            className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-white text-slate-900 p-4 rounded-full shadow-lg hover:scale-110 active:scale-95 transition-transform"
-          >
-            <Camera size={28} />
-          </button>
         </div>
-      ) : (
-        <div className="space-y-4">
-          <div className="relative rounded-2xl overflow-hidden aspect-square shadow-xl border-4 border-white">
-            <img src={selfie} alt="Selfie" className="w-full h-full object-cover" />
-            <button 
-              onClick={() => setSelfie(null)}
-              className="absolute top-4 right-4 bg-black/50 text-white p-2 rounded-full hover:bg-black/70 transition-colors"
-            >
-              <RefreshCw size={20} />
-            </button>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <button 
-              onClick={() => handleSubmit('IN')}
-              disabled={loading}
-              className="bg-green-600 text-white py-4 rounded-xl font-bold shadow-lg hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2"
-            >
-              {loading ? <Loader2 className="animate-spin" size={20} /> : 'Punch IN'}
-            </button>
-            <button 
-              onClick={() => handleSubmit('OUT')}
-              disabled={loading}
-              className="bg-orange-600 text-white py-4 rounded-xl font-bold shadow-lg hover:bg-orange-700 disabled:opacity-50 flex items-center justify-center gap-2"
-            >
-              {loading ? <Loader2 className="animate-spin" size={20} /> : 'Punch OUT'}
-            </button>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left">
+            <thead className="bg-slate-50 text-slate-500 text-xs uppercase font-semibold">
+              <tr>
+                <th className="px-6 py-4">Employee</th>
+                <th className="px-6 py-4">Type</th>
+                <th className="px-6 py-4">Amount</th>
+                <th className="px-6 py-4">Date</th>
+                <th className="px-6 py-4">Reason</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {filteredEntries.map((entry: any) => (
+                <tr key={entry.id} className="hover:bg-slate-50 transition-colors">
+                  <td className="px-6 py-4 font-medium">{entry.employees?.full_name}</td>
+                  <td className="px-6 py-4">
+                    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold ${
+                      entry.type === 'advance' ? 'bg-orange-50 text-orange-600' : 'bg-green-50 text-green-600'
+                    }`}>
+                      {entry.type === 'advance' ? <ArrowUpRight size={12} /> : <ArrowDownLeft size={12} />}
+                      {entry.type.toUpperCase()}
+                    </span>
+                  </td>
+                  <td className={`px-6 py-4 font-bold ${entry.type === 'advance' ? 'text-slate-900' : 'text-green-600'}`}>
+                    ₹{Number(entry.amount).toLocaleString()}
+                  </td>
+                  <td className="px-6 py-4 text-slate-500 text-sm">{new Date(entry.date).toLocaleDateString()}</td>
+                  <td className="px-6 py-4 text-slate-500 text-sm">{entry.description}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {showAdd && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-[100]">
+          <div className="bg-white w-full max-w-md rounded-2xl p-6 shadow-xl">
+            <h2 className="text-xl font-bold mb-4">Add Ledger Entry</h2>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Employee</label>
+                <select 
+                  required
+                  className="w-full px-4 py-2 rounded-xl border border-slate-200"
+                  value={newEntry.employee_id}
+                  onChange={e => setNewEntry({...newEntry, employee_id: e.target.value})}
+                >
+                  <option value="">Select Employee</option>
+                  {employees.map((e: any) => <option key={e.id} value={e.id}>{e.full_name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Type</label>
+                <div className="flex gap-4">
+                  <label className="flex-1">
+                    <input 
+                      type="radio" 
+                      name="type" 
+                      value="advance" 
+                      checked={newEntry.type === 'advance'}
+                      onChange={e => setNewEntry({...newEntry, type: e.target.value})}
+                      className="hidden peer"
+                    />
+                    <div className="text-center py-2 rounded-xl border border-slate-200 peer-checked:bg-orange-50 peer-checked:border-orange-200 peer-checked:text-orange-600 cursor-pointer">Advance</div>
+                  </label>
+                  <label className="flex-1">
+                    <input 
+                      type="radio" 
+                      name="type" 
+                      value="deduction" 
+                      checked={newEntry.type === 'deduction'}
+                      onChange={e => setNewEntry({...newEntry, type: e.target.value})}
+                      className="hidden peer"
+                    />
+                    <div className="text-center py-2 rounded-xl border border-slate-200 peer-checked:bg-green-50 peer-checked:border-green-200 peer-checked:text-green-600 cursor-pointer">Deduction</div>
+                  </label>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Amount (₹)</label>
+                <input 
+                  type="number" 
+                  required
+                  className="w-full px-4 py-2 rounded-xl border border-slate-200"
+                  value={newEntry.amount}
+                  onChange={e => setNewEntry({...newEntry, amount: e.target.value})}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Reason</label>
+                <input 
+                  type="text" 
+                  required
+                  className="w-full px-4 py-2 rounded-xl border border-slate-200"
+                  value={newEntry.description}
+                  onChange={e => setNewEntry({...newEntry, description: e.target.value})}
+                />
+              </div>
+              <div className="flex gap-4 pt-4">
+                <button 
+                  type="button" 
+                  onClick={() => setShowAdd(false)}
+                  className="flex-1 py-2 text-slate-500 font-medium"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit" 
+                  className="flex-1 py-2 bg-blue-600 text-white rounded-xl font-bold"
+                >
+                  Save Entry
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
@@ -207,4 +231,4 @@ const Attendance = () => {
   );
 };
 
-export default Attendance;
+export default Ledger;
